@@ -37,6 +37,19 @@ jobs:
           ls -l "$HOME/bin/et"
           file "$HOME/bin/et"
 
+      - name: Demo test (round trip and script)
+        run: bash ci/demo_test.sh
+
+      - name: Keep the logs and diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-test-output
+          if-no-files-found: ignore
+          path: |
+            ~/git/BEL/ET_training/ET/reports/
+            ~/git/BEL/ET_training/ci_roundtrip_*.diff
+
   docs:
     runs-on: ubuntu-24.04
     steps:
