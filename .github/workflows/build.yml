@@ -1,0 +1,51 @@
+name: build
+
+# Compiles ET with gprbuild against GtkAda on Ubuntu, and builds the Sphinx
+# documentation, so every push and pull request shows whether both still build.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  et:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GNAT, gprbuild and GtkAda
+        run: |
+          sudo apt-get update
+          GTKADA_DEV=$(apt-cache search --names-only '^libgtkada[0-9.]*-dev$' | awk '{print $1}' | sort -V | tail -n 1)
+          echo "GtkAda package: ${GTKADA_DEV}"
+          test -n "${GTKADA_DEV}"
+          sudo apt-get install -y --no-install-recommends gnat gprbuild "${GTKADA_DEV}" pkg-config
+          gnat --version | head -n 1 || gcc --version | head -n 1
+          gprbuild --version | head -n 1
+
+      - name: Build ET
+        working-directory: src/et
+        run: |
+          mkdir -p "$HOME/bin"
+          gprbuild -j0 -p -P et.gpr
+
+      - name: Check the binary
+        run: |
+          ls -l "$HOME/bin/et"
+          file "$HOME/bin/et"
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build the documentation
+        run: |
+          uv sync
+          cd doc
+          uv run make html
