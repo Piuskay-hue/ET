@@ -48,7 +48,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             ~/git/BEL/ET_training/ET/reports/
-            ~/git/BEL/ET_training/ci_roundtrip_*.diff
+            ~/git/BEL/ET_training/ci_*.diff
 
   docs:
     runs-on: ubuntu-24.04
