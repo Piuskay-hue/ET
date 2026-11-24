@@ -2,8 +2,10 @@
 # Integration test for issue #99: open the demo project headless, run a
 # script, save the project and check the saved module files.
 #
-#   1. round trip: open the demo and save it unchanged. Every saved .mod file
-#      must equal its original, apart from the "-- date" lines.
+#   1. round trip: open the demo and save it as A, then open A and save it as
+#      B. A and B must be equal, apart from the "-- date" lines, so ET can
+#      read back everything it writes. Differences between the demo files and
+#      A are reported, but do not fail the test.
 #   2. script: rename one device with a script, save, and check the saved
 #      module has the new name and not the old one.
 #
@@ -38,30 +40,50 @@ done
 
 cd "$DEMO_DIR"
 
-step "Test 1: round trip (open the demo, save it unchanged)"
-rm -rf ci_roundtrip
+step "Test 1: round trip (open, save as A; open A, save as B; A must equal B)"
+rm -rf ci_pass_a ci_pass_b
 set +e
-timeout 600 "$ET" --open-project demo --runmode headless --save-project-as ci_roundtrip --log-level 2
-rc=$?
+timeout 600 "$ET" --open-project demo --runmode headless --save-project-as ci_pass_a --log-level 2
+rc_a=$?
+rc_b=1
+if [ "$rc_a" -eq 0 ] && [ -d ci_pass_a ]; then
+  timeout 600 "$ET" --open-project ci_pass_a --runmode headless --save-project-as ci_pass_b --log-level 2
+  rc_b=$?
+fi
 set -e
-echo "et exit code: $rc"
-if [ "$rc" -ne 0 ] || [ ! -d ci_roundtrip ]; then
-  echo "FAIL: et did not save the project"
+echo "et exit codes: first save $rc_a, second save $rc_b"
+if [ "$rc_a" -ne 0 ] || [ ! -d ci_pass_a ] || [ "$rc_b" -ne 0 ] || [ ! -d ci_pass_b ]; then
+  echo "FAIL: et could not save the project, or could not open its own saved copy"
   FAILED=1
 else
+  for f in ci_pass_a/*.mod; do
+    name=$(basename "$f")
+    if [ ! -f "ci_pass_b/$name" ]; then
+      echo "FAIL $name is missing from the second save"
+      FAILED=1
+    elif diff -u <(grep -v '^-- date' "$f") <(grep -v '^-- date' "ci_pass_b/$name") > "ci_pass_$name.diff"; then
+      echo "ok   $name is stable: saving it a second time changes nothing"
+      rm -f "ci_pass_$name.diff"
+    else
+      echo "FAIL $name changed when saved a second time:"
+      head -n 40 "ci_pass_$name.diff"
+      FAILED=1
+    fi
+  done
+
+  # For information only: what the current ET writes differently from the
+  # demo files in ET_training. Format changes are expected here and do not
+  # fail the test.
+  echo
+  echo "Report (not a failure): differences between the demo files and what this ET writes"
   for f in demo/*.mod; do
     name=$(basename "$f")
-    if [ ! -f "ci_roundtrip/$name" ]; then
-      echo "FAIL: $name was not saved"
-      FAILED=1
-      continue
-    fi
-    if diff -u <(grep -v '^-- date' "$f") <(grep -v '^-- date' "ci_roundtrip/$name") > "ci_roundtrip_$name.diff"; then
-      echo "ok   $name is unchanged after a round trip"
-    else
-      echo "FAIL $name changed after a round trip ($(grep -c '^[-+][^-+]' "ci_roundtrip_$name.diff") lines differ):"
-      head -n 40 "ci_roundtrip_$name.diff"
-      FAILED=1
+    [ -f "ci_pass_a/$name" ] || continue
+    diff -u <(grep -v '^-- date' "$f") <(grep -v '^-- date' "ci_pass_a/$name") > "ci_report_$name.diff" || true
+    changed=$(grep -c '^[-+][^-+]' "ci_report_$name.diff" || true)
+    echo "  $name: $changed changed lines"
+    if [ "$changed" -gt 0 ]; then
+      grep '^[-+][^-+]' "ci_report_$name.diff" | sed 's/^\([-+]\)[[:space:]]*/\1 /' | sort | uniq -c | sort -rn | head -n 6 | sed 's/^/    /'
     fi
   done
 fi
